@@ -9,9 +9,6 @@ import org.junit.Assert.{assertEquals, assertTrue}
 import bloop.logging.RecordingLogger
 
 class BasicNailgunSpec extends NailgunTest {
-  val out = System.out
-  val err = System.err
-
   @Test
   def unknownCommandTest(): Unit = {
     withServerInProject("with-resources") { (logger, client) =>

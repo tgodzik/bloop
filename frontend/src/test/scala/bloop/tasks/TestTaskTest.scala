@@ -124,7 +124,7 @@ class TestTaskTest(
         val discoveredTests = DiscoveredTests(classLoader, tests)
         val opts = CommonOptions.default.copy(env = TestUtil.runAndTestProperties)
 
-        val cancelTime = Duration.apply(100, TimeUnit.MILLISECONDS)
+        val cancelTime = Duration.apply(20, TimeUnit.MILLISECONDS)
         val testHandle =
           TestInternals.execute(cwd, config, discoveredTests, Nil, Tasks.handler, logger, opts)
             .runAsync(ExecutionContext.ioScheduler)

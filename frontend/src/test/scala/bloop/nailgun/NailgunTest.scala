@@ -10,6 +10,7 @@ import bloop.bsp.BspServer
 import bloop.logging.{ProcessLogger, RecordingLogger}
 import bloop.tasks.TestUtil
 import com.martiansoftware.nailgun.NGServer
+import org.apache.commons.io.IOUtils
 
 /**
  * Base class for writing test for the nailgun integration.
@@ -39,11 +40,13 @@ abstract class NailgunTest {
           var optServer: Option[NGServer] = None
 
           // Trick nailgun into thinking these are the real streams
+          System.setIn(IOUtils.toInputStream(""))
           System.setOut(outStream)
           System.setErr(errStream)
           try {
             optServer = Some(Server.instantiateServer(Array(TEST_PORT.toString)))
           } finally {
+            System.setIn(System.in)
             System.setOut(oldOut)
             System.setErr(oldErr)
           }

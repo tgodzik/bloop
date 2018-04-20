@@ -99,18 +99,10 @@ class TestTaskTest(
         }.toMap
         val discoveredTests = DiscoveredTests(classLoader, tests)
         val opts = CommonOptions.default.copy(env = TestUtil.runAndTestProperties)
-        try {
-          val exitCode = TestUtil.await(Duration.apply(15, TimeUnit.SECONDS)) {
-            TestInternals.execute(cwd, config, discoveredTests, Nil, Tasks.handler, logger, opts)
-          }
-          assert(exitCode == 0)
-        } catch {
-          // This can happen when running in Docker. There is no permanent fix, so we temporarily fix it this way
-          // See https://github.com/brettwooldridge/NuProcess/issues/84
-          case e: RuntimeException =>
-            if (e.getMessage.contains("unshare(CLONE_FS) failed")) ()
-            else throw e
+        val exitCode = TestUtil.await(Duration.apply(15, TimeUnit.SECONDS)) {
+          TestInternals.execute(cwd, config, discoveredTests, Nil, Tasks.handler, logger, opts)
         }
+        assert(exitCode == 0)
       }
     }
   }

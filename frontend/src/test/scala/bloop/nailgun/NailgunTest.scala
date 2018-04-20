@@ -1,10 +1,9 @@
 package bloop.nailgun
 
-import java.io.{File, PrintStream}
+import java.io.PrintStream
 
 import org.junit.Assert.{assertEquals, assertNotEquals}
 import java.nio.file.{Files, Path, Paths}
-import java.util.Locale
 
 import bloop.Server
 import bloop.bsp.BspServer

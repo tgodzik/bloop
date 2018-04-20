@@ -132,16 +132,15 @@ final case class Forker(javaEnv: JavaEnv, classpath: Array[AbsolutePath]) {
          * bytes at a time. The rest that is not read will be read in the next 50ms. */
         val duration = FiniteDuration(50, TimeUnit.MILLISECONDS)
         val gobbleInput = ExecutionContext.ioScheduler.scheduleWithFixedDelay(duration, duration) {
-          if (!cancelled && process.isRunning) {
-            val buffer = new Array[Byte](4096)
-            val read = opts.in.read(buffer, 0, buffer.length)
-            if (read == -1) ()
-            else process.writeStdin(ByteBuffer.wrap(buffer))
-          }
+          val buffer = new Array[Byte](4096)
+          val read = opts.in.read(buffer, 0, buffer.length)
+          if (read == -1 || cancelled || !process.isRunning) ()
+          else process.writeStdin(ByteBuffer.wrap(buffer))
         }
 
         Task {
           val code = process.waitFor(0, _root_.java.util.concurrent.TimeUnit.SECONDS)
+          cancelled = true
           gobbleInput.cancel()
           code
         }

@@ -122,7 +122,7 @@ final case class Forker(javaEnv: JavaEnv, classpath: Array[AbsolutePath]) {
         npEnv.clear()
         npEnv.putAll(propertiesAsScalaMap(opts.env).asJava)
         val process = builder.start()
-        @volatile var cancelled: Boolean = false
+        @volatile var shutdownInput: Boolean = false
 
         /* We need to gobble the input manually with a fixed delay because otherwise
          * the remote process will not see it. Instead of using the `wantWrite` API
@@ -134,20 +134,22 @@ final case class Forker(javaEnv: JavaEnv, classpath: Array[AbsolutePath]) {
         val gobbleInput = ExecutionContext.ioScheduler.scheduleWithFixedDelay(duration, duration) {
           val buffer = new Array[Byte](4096)
           val read = opts.in.read(buffer, 0, buffer.length)
-          if (read == -1 || cancelled || !process.isRunning) ()
+          if (read == -1 || shutdownInput || !process.isRunning) ()
           else process.writeStdin(ByteBuffer.wrap(buffer))
         }
 
         Task {
-          val code = process.waitFor(0, _root_.java.util.concurrent.TimeUnit.SECONDS)
-          cancelled = true
-          gobbleInput.cancel()
-          code
+          try {
+            process.waitFor(0, _root_.java.util.concurrent.TimeUnit.SECONDS)
+          } finally {
+            shutdownInput = true
+            gobbleInput.cancel()
+          }
         }
         // Uncomment this and the task will never complete!
         //.doOnFinish(_ => Task(gobbleInput.cancel()))
           .doOnCancel(Task {
-            cancelled = true
+            shutdownInput = true
             gobbleInput.cancel()
             try process.closeStdin(false)
             finally {

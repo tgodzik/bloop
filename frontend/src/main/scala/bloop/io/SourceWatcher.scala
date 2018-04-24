@@ -17,14 +17,11 @@ import monix.reactive.{MulticastStrategy, Observable}
 
 final class SourceWatcher(project: Project, paths0: Seq[Path], logger: Logger) {
   import java.nio.file.Files
-  private val paths = paths0.distinct
+  private val paths = paths0.distinct.filter(p => Files.exists(p))
   private val dirs = paths.filter(p => Files.isDirectory(p))
   private val dirsCount = dirs.size
   private val filesCount = paths.filter(p => Files.isRegularFile(p)).size
   private val slf4jLogger = new Slf4jAdapter(logger)
-
-  // Create source directories if they don't exist, otherwise the watcher fails.
-  dirs.foreach(p => if (!Files.exists(p)) Files.createDirectories(p) else ())
 
   def watch(state0: State, action: State => Task[State]): Task[State] = {
     val ngout = state0.commonOptions.ngout

@@ -122,6 +122,7 @@ abstract class CommunityBuild(val buildpressHomeDir: AbsolutePath) {
       val rootProject = Project(
         name = rootProjectName,
         baseDirectory = dummyExistingBaseDir,
+        workspaceRootDirectory = Some(buildBaseDir),
         dependencies = allProjectsInBuild.map(_.name),
         scalaInstance = allProjectsInBuild.head.scalaInstance,
         rawClasspath = Nil,

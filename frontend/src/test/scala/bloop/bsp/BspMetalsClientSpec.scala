@@ -25,6 +25,8 @@ import scala.concurrent.duration.FiniteDuration
 import ch.epfl.scala.bsp.endpoints.BuildTarget.scalacOptions
 import bloop.engine.ExecutionContext
 import scala.util.Random
+import bloop.Compiler.Result.Failed
+import java.{util => ju}
 
 object LocalBspMetalsClientSpec extends BspMetalsClientSpec(BspProtocol.Local)
 object TcpBspMetalsClientSpec extends BspMetalsClientSpec(BspProtocol.Tcp)
@@ -331,23 +333,40 @@ class BspMetalsClientSpec(
     }
   }
 
-  test("compile producing Semanticdb with scala3 without using plugin") {
+  test("compile producing Scala3 errors") {
+
+    val errorSources = List(
+      """/Foo.scala
+        |class Foo{
+        |
+        |  val int : Int = ""
+        |}
+        |""".stripMargin
+    )
     TestUtil.withinWorkspace { workspace =>
       val `A` = TestProject(
         workspace,
         "A",
-        dummyFooSources,
+        errorSources,
         scalaVersion = Some("0.23.0-bin-20200210-0dc07b0-NIGHTLY"),
         scalaOrg = Some("ch.epfl.lamp"),
-        scalaCompiler = Some("dotty-compiler_0.23")
+        scalaCompiler = Some("dotty-compiler_0.23"),
+        scalacOptions = List("-color:never")
       )
       val projects = List(`A`)
       val configDir = TestProject.populateWorkspace(workspace, projects)
       val logger = new RecordingLogger(ansiCodesSupported = false)
-      WorkspaceSettings.writeToFile(
-        configDir,
-        WorkspaceSettings("4.3.0", List()),
-        logger
+      val initialState = loadState(workspace, projects, logger)
+      val compiledState = initialState.compile(`A`)
+
+      assertNoDiff(
+        logger.renderErrors(exceptContaining = "Failed to compile"),
+        s"""|[E1] A/src/Foo.scala:3:19
+            |     Found:    ("" : String)
+            |     Required: Int
+            |     L3:   val int : Int = ""
+            |                           ^
+            |A/src/Foo.scala: L3 [E1]""".stripMargin
       )
       loadBspState(workspace, projects, logger) { state =>
         val compiledState = state.compile(`A`).toTestState

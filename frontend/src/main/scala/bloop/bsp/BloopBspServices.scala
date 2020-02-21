@@ -484,6 +484,7 @@ final class BloopBspServices(
     ifInitialized(params.originId) { (state: State, logger0: BspServerLogger) =>
       mapToProjects(params.targets, state) match {
         case Left(error) =>
+          pprint.log(error)
           // Log the mapping error to the user via a log event + an error status code
           logger0.error(error)
           Task.now((state, Right(bsp.CompileResult(None, bsp.StatusCode.Error, None, None))))

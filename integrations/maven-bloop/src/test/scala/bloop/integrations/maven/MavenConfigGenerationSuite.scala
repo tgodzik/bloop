@@ -69,6 +69,21 @@ class MavenConfigGenerationSuite extends BaseConfigSuite {
   }
 
   @Test
+  def noScalaVersion() = {
+    check("no_scala_version/pom.xml") { (configFile, projectName, subprojects) =>
+      assert(subprojects.isEmpty)
+      assert(configFile.project.`scala`.isDefined)
+      assertEquals("2.13.6", configFile.project.`scala`.get.version)
+      assertEquals("org.scala-lang", configFile.project.`scala`.get.organization)
+
+      assert(hasTag(configFile, Tag.Library))
+
+      assertNoConfigsHaveAnyJars(List(configFile), List(s"$projectName", s"$projectName-test"))
+      assertAllConfigsMatchJarNames(List(configFile), List("scala-library", "munit"))
+    }
+  }
+
+  @Test
   def multiProject() = {
     check(
       "multi_scala/pom.xml",

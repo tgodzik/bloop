@@ -16,7 +16,7 @@ public class ExtendedScalaContinuousCompileMojo extends ScalaContinuousCompileMo
     }
 
     public List<String> getScalacArgs() throws Exception {
-        return super.getScalaOptions();
+        return super.getScalacOptions();
     }
 
     public List<File> getCompileSourceDirectories() throws Exception {

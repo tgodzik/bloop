@@ -179,7 +179,6 @@ object MojoImplementation {
       lazy val libraryAndDependencies = scalaContext.toList
         .flatMap(_.findLibraryAndDependencies().asScala)
 
-      println(artifacts)
       // if we don't add scala-library explicitely it will not be available in artifacts
       val hasScalaLibrary = artifacts.exists {
         case a: Artifact => a.getArtifactId() == "scala-library"

@@ -10,9 +10,6 @@ import java.io.InputStreamReader
 import java.io.File
 import org.junit.Assert._
 import org.junit.Test
-import org.apache.maven.shared.invoker.DefaultInvocationRequest
-import org.apache.maven.shared.invoker.DefaultInvoker
-import org.apache.maven.shared.invoker.InvocationResult
 import scala.jdk.CollectionConverters._
 import scala.util.control.NonFatal
 import scala.util.Try
@@ -73,7 +70,7 @@ class MavenConfigGenerationSuite extends BaseConfigSuite {
     check("no_scala_version/pom.xml") { (configFile, projectName, subprojects) =>
       assert(subprojects.isEmpty)
       assert(configFile.project.`scala`.isDefined)
-      assertEquals("2.13.6", configFile.project.`scala`.get.version)
+      assertEquals("2.13.4", configFile.project.`scala`.get.version)
       assertEquals("org.scala-lang", configFile.project.`scala`.get.organization)
 
       assert(hasTag(configFile, Tag.Library))

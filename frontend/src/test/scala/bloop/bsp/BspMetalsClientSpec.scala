@@ -385,6 +385,31 @@ class BspMetalsClientSpec(
       }
     }
   }
+  test("remove-warnings") {
+    TestUtil.withinWorkspace { workspace =>
+      val FooNoWarning =
+        """/Foo.scala
+          |class Foo
+            """.stripMargin
+      val FooWithWarning =
+        """/Foo.scala
+          |import Predef.assert
+          |class Foo
+            """.stripMargin
+
+      val logger = new RecordingLogger(ansiCodesSupported = false)
+      val sources = List(FooNoWarning)
+      val options = List("-Ywarn-unused")
+      val `A` = TestProject(workspace, "a", sources, scalacOptions = options)
+      val projects = List(`A`)
+      val configDir = TestProject.populateWorkspace(workspace, projects)
+      loadBspState(workspace, projects, logger) { state =>
+        val compiledState = state.compile(`A`).toTestState
+
+        assert(compiledState.status == ExitStatus.Ok)
+      }
+    }
+  }
 
   test("compile producing Semanticdb with scala3 without using plugin") {
     TestUtil.withinWorkspace { workspace =>

@@ -34,6 +34,11 @@ import bloop.reporter.ReporterInputs
 import bloop.task.Task
 import bloop.testing.LoggingEventHandler
 import bloop.testing.TestInternals
+import coursierapi.Fetch
+import scala.collection.JavaConverters._
+
+import bloop.util.JavaRuntime
+import java.io.File
 
 object Interpreter {
   // This is stack-safe because of Monix's trampolined execution
@@ -290,6 +295,21 @@ object Interpreter {
                     "--main-class",
                     "ammonite.Main"
                   )
+                  val javaBinary = project.runtimeJdkConfig
+                    .map(jdk => jdk.javaHome)
+                    .getOrElse(JavaRuntime.home)
+                    .resolve("bin")
+                    .resolve("java")
+
+                  val ammoniteClasspath = coursierapi.Fetch
+                    .create()
+                    .withDependencies(
+                      coursierapi.Dependency
+                        .of("com.lihaoyi", s"ammonite_$scalaVersion", ammVersion)
+                    )
+                    .fetch()
+                    .asScala
+                    .mkString(File.pathSeparator)
 
                   val classpath = project.fullRuntimeClasspath(dag, state.client)
                   val coursierClasspathArgs =

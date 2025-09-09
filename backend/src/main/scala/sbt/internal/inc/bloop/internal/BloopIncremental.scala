@@ -3,6 +3,9 @@ package sbt.internal.inc.bloop.internal
 
 import java.io.File
 import java.nio.file.Path
+import java.{util => ju}
+
+import scala.collection.JavaConverters._
 
 import bloop.UniqueCompileInputs
 import bloop.task.Task
@@ -15,6 +18,7 @@ import sbt.internal.inc.PlainVirtualFileConverter
 import sbt.util.Logger
 import xsbti.AnalysisCallback
 import xsbti.VirtualFile
+import xsbti.VirtualFileRef
 import xsbti.api.AnalyzedClass
 import xsbti.compile._
 import xsbti.compile.analysis.ReadStamps
@@ -25,6 +29,32 @@ object BloopIncremental {
     (Set[VirtualFile], DependencyChanges, AnalysisCallback, ClassFileManager) => Task[Unit]
 
   private val converter = PlainVirtualFileConverter.converter
+
+  private def inputStamps(uniqueInputs: UniqueCompileInputs, initial: ReadStamps): ReadStamps = {
+    new ReadStamps {
+
+      override def getAllLibraryStamps(): ju.Map[VirtualFileRef, Stamp] = initial.getAllLibraryStamps()
+
+      override def getAllSourceStamps(): ju.Map[VirtualFileRef, Stamp] =
+        uniqueInputs.sources
+          .map(kv => kv.source -> BloopStamps.fromBloopHashToZincHash(kv.hash))
+          .map {
+            // java map is invariant, which seems to cause a type error if we don't cast to Stamp
+            case (vf, hash: Stamp) => vf -> hash.asInstanceOf[Stamp]
+          }
+          .toMap
+          .asJava
+
+      override def getAllProductStamps(): ju.Map[VirtualFileRef, Stamp] = initial.getAllProductStamps()
+
+      private val sourceHashes = uniqueInputs.sources.map(kv => kv.source -> kv.hash).toMap
+      override def source(file: VirtualFile): Stamp = {
+        sourceHashes.get(file).map(bloopHash => BloopStamps.fromBloopHashToZincHash(bloopHash)).getOrElse(BloopStamps.forHash(file))
+      }
+      override def product(file: VirtualFileRef): Stamp = initial.product(file)
+      override def library(file: VirtualFileRef): Stamp = initial.library(file)
+    }
+  }
 
   def compile(
       sources: Iterable[VirtualFile],
@@ -48,7 +78,8 @@ object BloopIncremental {
       }
     }
 
-    val current = BloopStamps.initial(log)
+    val current = inputStamps(uniqueInputs, BloopStamps.initial(log))
+
     val externalAPI = getExternalAPI(lookup)
     val previous = previous0 match { case a: Analysis => a }
     val previousRelations = previous.relations

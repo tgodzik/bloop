@@ -4,11 +4,12 @@ import java.nio.file.Path
 
 import scala.util.control.NonFatal
 
+import bloop.util.HashedSource
+
 import _root_.bloop.io.ByteHasher
 import sbt.internal.inc.EmptyStamp
 import sbt.internal.inc.FarmHash
 import sbt.internal.inc.Hash
-import sbt.internal.inc.PlainVirtualFileConverter
 import sbt.internal.inc.Stamper
 import sbt.internal.inc.Stamps
 import sbt.util.Logger
@@ -18,7 +19,7 @@ import xsbti.compile.analysis.ReadStamps
 import xsbti.compile.analysis.Stamp
 
 object BloopStamps {
-  private val converter = PlainVirtualFileConverter.converter
+  private val converter = HashedSource.converter
 
   private def underlying(logger: Logger) = Stamps.initial(
     BloopStamps.forHash,

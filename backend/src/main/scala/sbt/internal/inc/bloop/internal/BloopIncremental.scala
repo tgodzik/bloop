@@ -14,7 +14,6 @@ import bloop.tracing.BraveTracer
 import sbt.internal.inc.Analysis
 import sbt.internal.inc.InvalidationProfiler
 import sbt.internal.inc.Lookup
-import sbt.internal.inc.PlainVirtualFileConverter
 import sbt.util.Logger
 import xsbti.AnalysisCallback
 import xsbti.VirtualFile
@@ -23,34 +22,31 @@ import xsbti.api.AnalyzedClass
 import xsbti.compile._
 import xsbti.compile.analysis.ReadStamps
 import xsbti.compile.analysis.Stamp
+import bloop.util.HashedSource
 
 object BloopIncremental {
   type CompileFunction =
     (Set[VirtualFile], DependencyChanges, AnalysisCallback, ClassFileManager) => Task[Unit]
 
-  private val converter = PlainVirtualFileConverter.converter
-
   private def inputStamps(uniqueInputs: UniqueCompileInputs, initial: ReadStamps): ReadStamps = {
     new ReadStamps {
 
+      private val sourceStamps = uniqueInputs.sources
+        .map(kv => kv.asInstanceOf[VirtualFileRef] -> BloopStamps.fromBloopHashToZincHash(kv.bloopHash))
+        .map {
+          // java map is invariant, which seems to cause a type error if we don't cast to Stamp
+          case (vf: VirtualFileRef, hash: Stamp) => vf -> hash.asInstanceOf[Stamp]
+        }
+        .toMap
+
       override def getAllLibraryStamps(): ju.Map[VirtualFileRef, Stamp] = initial.getAllLibraryStamps()
 
-      override def getAllSourceStamps(): ju.Map[VirtualFileRef, Stamp] =
-        uniqueInputs.sources
-          .map(kv => kv.source -> BloopStamps.fromBloopHashToZincHash(kv.hash))
-          .map {
-            // java map is invariant, which seems to cause a type error if we don't cast to Stamp
-            case (vf, hash: Stamp) => vf -> hash.asInstanceOf[Stamp]
-          }
-          .toMap
-          .asJava
+      override def getAllSourceStamps(): ju.Map[VirtualFileRef, Stamp] = sourceStamps.asJava
 
       override def getAllProductStamps(): ju.Map[VirtualFileRef, Stamp] = initial.getAllProductStamps()
 
-      private val sourceHashes = uniqueInputs.sources.map(kv => kv.source -> kv.hash).toMap
-      override def source(file: VirtualFile): Stamp = {
-        sourceHashes.get(file).map(bloopHash => BloopStamps.fromBloopHashToZincHash(bloopHash)).getOrElse(BloopStamps.forHash(file))
-      }
+      override def source(file: VirtualFile): Stamp = sourceStamps.getOrElse(file, BloopStamps.forHash(file))
+
       override def product(file: VirtualFileRef): Stamp = initial.product(file)
       override def library(file: VirtualFileRef): Stamp = initial.library(file)
     }
@@ -91,12 +87,11 @@ object BloopIncremental {
         () => new ConcurrentAnalysisCallback(internalBinaryToSourceClassName, externalAPI, current, output, options, manager)
     }
     // We used to catch for `CompileCancelled`, but we prefer to propagate it so that Bloop catches it
-    compileIncremental(sources, uniqueInputs, lookup, previous, current, compile, builder, log, output, options, manager, tracer)
+    compileIncremental(sources, lookup, previous, current, compile, builder, log, output, options, manager, tracer)
   }
 
   def compileIncremental(
       sources: Iterable[VirtualFile],
-      uniqueInputs: UniqueCompileInputs,
       lookup: Lookup,
       previous: Analysis,
       current: ReadStamps,
@@ -111,14 +106,14 @@ object BloopIncremental {
       profiler: InvalidationProfiler = InvalidationProfiler.empty
   )(implicit equivS: Equiv[Stamp]): Task[(Boolean, Analysis)] = {
     val setOfSources = sources.toSet
-    val incremental = new BloopNameHashing(log, uniqueInputs, options, profiler.profileRun, tracer)
-    val initialChanges = incremental.detectInitialChanges(setOfSources, previous, current, lookup, converter, output)
+    val incremental = new BloopNameHashing(log, options, profiler.profileRun, tracer)
+    val initialChanges = incremental.detectInitialChanges(setOfSources, previous, current, lookup, HashedSource.converter, output)
     def isJrt(path: Path) = path.getFileSystem.provider().getScheme == "jrt"
     val binaryChanges = new DependencyChanges {
       val modifiedLibraries = initialChanges.libraryDeps.toArray
 
       val modifiedBinaries: Array[File] = modifiedLibraries
-        .map(converter.toPath(_))
+        .map(HashedSource.converter.toPath(_))
         .collect {
           // jrt path is neither a jar nor a normal file
           case path if !isJrt(path) =>

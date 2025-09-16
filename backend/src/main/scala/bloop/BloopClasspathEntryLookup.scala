@@ -7,7 +7,6 @@ import java.util.zip.ZipException
 import java.util.zip.ZipFile
 import java.{util => ju}
 
-import sbt.internal.inc.PlainVirtualFileConverter
 import sbt.internal.inc.bloop.internal.BloopStamps
 import sbt.internal.inc.classpath.ClasspathUtil
 import sbt.util.InterfaceUtil
@@ -126,10 +125,11 @@ object BloopClasspathEntryLookup {
     def findClassFile(t: (File, PreviousResult)): Option[Path] = {
       val (classesDir, result) = t
       val targetFile = classesDir.toPath().resolve(relativeClassFile)
-      val targetClassFile = PlainVirtualFileConverter.converter.toVirtualFile(targetFile)
+      val targetFileString = targetFile.toString
       InterfaceUtil.toOption(result.analysis()).flatMap { analysis0 =>
         val analysis = analysis0.asInstanceOf[sbt.internal.inc.Analysis]
-        val definedClass = analysis.relations.allProducts.contains(targetClassFile)
+        val definedClass =
+          analysis.relations.allProducts.exists(file => file.id == targetFileString)
         if (definedClass) Some(targetFile) else None
       }
     }

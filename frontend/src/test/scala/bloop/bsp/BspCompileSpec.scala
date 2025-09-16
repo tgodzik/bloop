@@ -1311,7 +1311,6 @@ class BspCompileSpec(
       val macroCompiled = macroState1.compile(macroProject)
       assert(macroCompiled.status == ExitStatus.Ok)
       def runTest(sleepBeforeModifyFile: Long): Unit = {
-        println(s"sleepBeforeModifyFile: $sleepBeforeModifyFile")
         writeFile(testProject.srcFor("main/scala/a/SlowCompilation.scala"), slowFile)
         writeFile(testProject.srcFor("main/scala/a/FastCompilation.scala"), fastFile)
         // Start compilation of main project asynchronously
@@ -1332,7 +1331,7 @@ class BspCompileSpec(
             |  def method2(): String = "2" // NEW METHOD!
             |}
         """.stripMargin
-        // !!!NOTE!!! writeFile helper actually deletes and recreates!!!
+        // writeFile helper actually deletes and recreates
         writeFile(testProject.srcFor("main/scala/a/FastCompilation.scala"), modifiedFastFile)
         // Wait for first compilation to complete
         scala.concurrent.Await.result(compilationTask, FiniteDuration(20, TimeUnit.SECONDS))

@@ -8,6 +8,7 @@ import bloop.UniqueCompileInputs
 import bloop.data.Project
 import bloop.io.AbsolutePath
 import bloop.task.Task
+import bloop.util.HashedSource
 
 import monix.execution.atomic.AtomicInt
 import xsbti.compile.CompileAnalysis
@@ -15,8 +16,9 @@ import xsbti.compile.FileHash
 import xsbti.compile.MiniSetup
 import xsbti.compile.PreviousResult
 
+// TODO, no need to store sources in the last successful result
 case class LastSuccessfulResult(
-    sources: Vector[UniqueCompileInputs.HashedSource],
+    sources: Vector[HashedSource],
     classpath: Vector[FileHash],
     previous: PreviousResult,
     classesDir: AbsolutePath,

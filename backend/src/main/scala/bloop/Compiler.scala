@@ -40,7 +40,6 @@ import sbt.internal.inc.CompileFailed
 import sbt.internal.inc.ConcreteAnalysisContents
 import sbt.internal.inc.FileAnalysisStore
 import sbt.internal.inc.FreshCompilerCache
-import sbt.internal.inc.PlainVirtualFileConverter
 import sbt.internal.inc.bloop.BloopZincCompiler
 import sbt.internal.inc.bloop.internal.BloopLookup
 import sbt.internal.inc.bloop.internal.BloopStamps
@@ -48,6 +47,7 @@ import sbt.util.InterfaceUtil
 import xsbti.T2
 import xsbti.VirtualFileRef
 import xsbti.compile._
+import bloop.util.HashedSource
 
 case class CompileInputs(
     scalaInstance: ScalaInstance,
@@ -175,7 +175,7 @@ object CompileOutPaths {
 
 object Compiler {
   private implicit val filter: DebugFilter.Compilation.type = bloop.logging.DebugFilter.Compilation
-  private val converter = PlainVirtualFileConverter.converter
+  private val converter = HashedSource.converter
   private final class BloopProgress(
       reporter: ZincReporter,
       cancelPromise: Promise[Unit]
@@ -316,7 +316,7 @@ object Compiler {
       val lookup = new BloopClasspathEntryLookup(
         results,
         compileInputs.uniqueInputs.classpath,
-        converter
+        HashedSource.converter
       )
       val reporter = compileInputs.reporter
       val compilerCache = new FreshCompilerCache
@@ -340,7 +340,6 @@ object Compiler {
       compileInputs.javacBin,
       compileInputs.javacOptions.toList
     )
-    val inputs = tracer.traceVerbose("creating zinc inputs")(_ => getInputs(compilers))
 
     // We don't need nanosecond granularity, we're happy with milliseconds
     def elapsed: Long = ((System.nanoTime() - start).toDouble / 1e6).toLong
@@ -373,6 +372,8 @@ object Compiler {
     }
 
     val uniqueInputs = compileInputs.uniqueInputs
+    // reuse hash from unique inputs
+    val inputs = tracer.traceVerbose("creating zinc inputs")(_ => getInputs(compilers))
     val wasPreviousSuccessful =
       compileInputs.previousCompilerResult match {
         case Ok(_) => true
@@ -939,7 +940,7 @@ object Compiler {
       newClassesDir: Path
   ): CompileOptions = {
     // Sources are all files
-    val sources = inputs.sources.map(path => converter.toVirtualFile(path.underlying))
+    val sources = inputs.uniqueInputs.sources
 
     val scalacOptions = adjustScalacReleaseOptions(
       scalacOptions = inputs.scalacOptions,
@@ -976,7 +977,7 @@ object Compiler {
     CompileOptions
       .create()
       .withClassesDirectory(newClassesDir)
-      .withSources(sources)
+      .withSources(sources.toArray)
       .withClasspath(classpathVirtual)
       .withScalacOptions(optionsWithoutFatalWarnings)
       .withJavacOptions(inputs.javacOptions)

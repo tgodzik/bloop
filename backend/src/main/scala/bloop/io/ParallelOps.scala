@@ -25,6 +25,7 @@ import monix.reactive.Consumer
 import monix.reactive.MulticastStrategy
 import monix.reactive.Observable
 import java.nio.file.AccessDeniedException
+import java.time.temporal.ChronoUnit
 
 object ParallelOps {
 
@@ -246,8 +247,11 @@ object ParallelOps {
                   Try(Files.readAttributes(targetFile, classOf[BasicFileAttributes])) match {
                     case Success(targetAttrs) =>
                       val changedMetadata = {
-                        originAttrs.lastModifiedTime
-                          .compareTo(targetAttrs.lastModifiedTime) != 0 ||
+                        val originTime =
+                          originAttrs.lastModifiedTime.toInstant.truncatedTo(ChronoUnit.MILLIS)
+                        val targetTime =
+                          targetAttrs.lastModifiedTime.toInstant.truncatedTo(ChronoUnit.MILLIS)
+                        originTime.compareTo(targetTime) != 0 ||
                         originAttrs.size() != targetAttrs.size()
                       }
 

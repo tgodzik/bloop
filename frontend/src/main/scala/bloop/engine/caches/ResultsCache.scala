@@ -35,6 +35,7 @@ import bloop.task.Task
 import sbt.internal.inc.Analysis
 import sbt.internal.inc.FileAnalysisStore
 import xsbti.compile.PreviousResult
+import bloop.ClientResult
 
 /**
  * Maps projects to compilation results, populated by `Tasks.compile`.
@@ -258,7 +259,7 @@ object ResultsCache {
                         CompileProducts(classesDir, classesDir, r, r, Set.empty, Map.empty)
                       val bundle = ResultBundle(
                         Result.Success(reporter, products, 0L, dummyTasks, false, false),
-                        Some(LastSuccessfulResult(inputs, products, Task.now(()))),
+                        Some(LastSuccessfulResult(inputs, products, Task.now(ClientResult.NoOp))),
                         None
                       )
 

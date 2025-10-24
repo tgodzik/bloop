@@ -13,13 +13,14 @@ import monix.execution.atomic.AtomicInt
 import xsbti.compile.CompileAnalysis
 import xsbti.compile.MiniSetup
 import xsbti.compile.PreviousResult
+import bloop.ClientResult
 
 case class LastSuccessfulResult(
     noClassPathAndSources: Boolean,
     previous: PreviousResult,
     classesDir: AbsolutePath,
     counterForClassesDir: AtomicInt,
-    populatingProducts: Task[Unit]
+    populatingProducts: Task[ClientResult]
 ) {
   def isEmpty: Boolean = {
     noClassPathAndSources &&
@@ -44,14 +45,14 @@ object LastSuccessfulResult {
       EmptyPreviousResult,
       emptyClassesDir,
       AtomicInt(0),
-      Task.now(())
+      Task.now(ClientResult.NoOp)
     )
   }
 
   def apply(
       inputs: UniqueCompileInputs,
       products: CompileProducts,
-      backgroundIO: Task[Unit]
+      backgroundIO: Task[ClientResult]
   ): LastSuccessfulResult = {
     LastSuccessfulResult(
       noClassPathAndSources = inputs.sources.size == 0 && inputs.classpath.size == 0,

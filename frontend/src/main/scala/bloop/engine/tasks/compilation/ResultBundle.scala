@@ -4,6 +4,7 @@ import bloop.Compiler
 import bloop.engine.caches.LastSuccessfulResult
 
 import monix.execution.CancelableFuture
+import bloop.ClientResult
 
 /**
  * Defines a result that aggregates several compilation outputs together.
@@ -20,17 +21,18 @@ case class ResultBundle(
     fromCompiler: Compiler.Result,
     successful: Option[LastSuccessfulResult],
     previous: Option[LastSuccessfulResult],
-    runningBackgroundTasks: CancelableFuture[Unit]
+    runningBackgroundTasks: CancelableFuture[ClientResult]
 )
 
 object ResultBundle {
   val empty: ResultBundle = {
-    ResultBundle(Compiler.Result.Empty, None, None, CancelableFuture.unit)
+    ResultBundle(Compiler.Result.Empty, None, None, CancelableFuture.successful(ClientResult.NoOp))
   }
 
   def apply(
       fromCompiler: Compiler.Result,
       successful: Option[LastSuccessfulResult],
       previous: Option[LastSuccessfulResult]
-  ): ResultBundle = ResultBundle(fromCompiler, successful, previous, CancelableFuture.unit)
+  ): ResultBundle =
+    ResultBundle(fromCompiler, successful, previous, CancelableFuture.successful(ClientResult.NoOp))
 }

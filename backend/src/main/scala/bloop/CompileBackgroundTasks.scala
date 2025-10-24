@@ -12,9 +12,14 @@ abstract class CompileBackgroundTasks {
       clientReporter: Reporter,
       clientTracer: BraveTracer,
       clientLogger: Logger
-  ): Task[Unit]
+  ): Task[ClientResult]
 }
 
+sealed trait ClientResult
+object ClientResult {
+  case object NoOp extends ClientResult
+  case object Copied extends ClientResult
+}
 object CompileBackgroundTasks {
   type Sig = (AbsolutePath, Reporter, BraveTracer) => Task[Unit]
   val empty: CompileBackgroundTasks = {
@@ -24,7 +29,7 @@ object CompileBackgroundTasks {
           clientReporter: Reporter,
           clientTracer: BraveTracer,
           clientLogger: Logger
-      ): Task[Unit] = Task.now(())
+      ): Task[ClientResult] = Task.now(ClientResult.NoOp)
     }
   }
 }

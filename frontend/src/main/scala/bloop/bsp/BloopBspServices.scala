@@ -613,7 +613,11 @@ final class BloopBspServices(
               }
           }
       }
-
+      // if (errorMsgs.isEmpty) {
+      //   compiledResults.map {
+      //     case (p,  Compiler.Result.Success(_, _, _, backgroundTasks, isNoOp, _)) => backgroundTasks
+      //   }
+      // }
       val response: Either[Response.Error, bsp.CompileResult] = {
         if (cancelCompilation.isCompleted)
           Right(bsp.CompileResult(originId, bsp.StatusCode.Cancelled, None, None))

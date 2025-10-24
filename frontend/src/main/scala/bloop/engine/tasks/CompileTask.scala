@@ -43,6 +43,7 @@ import xsbti.compile.MiniSetup
 import xsbti.compile.PreviousResult
 
 import java.nio.file.Path
+import bloop.ClientResult
 
 object CompileTask {
   private implicit val logContext: DebugFilter = DebugFilter.Compilation
@@ -115,14 +116,18 @@ object CompileTask {
           case Right(CopyResourcesOnly) =>
             val denylist = Set.empty[Path]
             val config = ParallelOps.CopyConfiguration(5, CopyMode.NoReplace, denylist, Set.empty)
-            val copyResourcesTask: Task[Unit] =
-              ParallelOps.copyResources(
-                project.runtimeResources,
-                bundle.clientClassesObserver.classesDir,
-                config,
-                logger,
-                ExecutionContext.ioScheduler
-              )
+            val copyResourcesTask: Task[ClientResult] =
+              ParallelOps
+                .copyResources(
+                  project.runtimeResources,
+                  bundle.clientClassesObserver.classesDir,
+                  config,
+                  logger,
+                  ExecutionContext.ioScheduler
+                )
+                .map { fileWalk =>
+                  if (fileWalk.copiedCount == 0) ClientResult.NoOp else ClientResult.Copied
+                }
             Task.now(
               ResultBundle(
                 Compiler.Result.Empty,
@@ -235,7 +240,7 @@ object CompileTask {
               inputs.flatMap(inputs => compile(inputs)).map { result =>
                 def runPostCompilationTasks(
                     backgroundTasks: CompileBackgroundTasks
-                ): CancelableFuture[Unit] = {
+                ): CancelableFuture[ClientResult] = {
                   // Post compilation tasks use tracer, so terminate right after they have
                   val postCompilationTasks =
                     backgroundTasks
@@ -260,10 +265,10 @@ object CompileTask {
                       if (s.isNoOp) blockingOnRunningTasks // Task.unit
                       else {
                         for {
-                          _ <- blockingOnRunningTasks
+                          result <- blockingOnRunningTasks
                           _ <- populateNewReadOnlyClassesDir(s.products, bgTracer, rawLogger)
                             .doOnFinish(_ => Task(bgTracer.terminate()))
-                        } yield ()
+                        } yield result
                       }
                     }
 
@@ -279,7 +284,12 @@ object CompileTask {
                     ResultBundle(result, None, Some(lastSuccessful), runningTasks)
                   case _: Compiler.Result.Blocked | Compiler.Result.Empty |
                       _: Compiler.Result.GlobalError =>
-                    ResultBundle(result, None, None, CancelableFuture.unit)
+                    ResultBundle(
+                      result,
+                      None,
+                      None,
+                      CancelableFuture.successful(ClientResult.Copied)
+                    )
                 }
               }
             }
@@ -465,7 +475,7 @@ object CompileTask {
           }
         val populateNewProductsTask = newSuccessful.map(_.populatingProducts).getOrElse(Task.unit)
         val cleanUpPreviousLastSuccessful = resultBundle.previous match {
-          case None => populateNewProductsTask
+          case None => populateNewProductsTask.map(_ => ())
           case Some(previousSuccessful) =>
             for {
               _ <- previousSuccessful.populatingProducts

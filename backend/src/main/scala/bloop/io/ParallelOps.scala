@@ -19,6 +19,7 @@ import monix.eval.{Task => MonixTask}
 import monix.execution.Cancelable
 import monix.execution.Scheduler
 import monix.execution.atomic.AtomicBoolean
+import monix.execution.atomic.AtomicInt
 import monix.execution.cancelables.AssignableCancelable
 import monix.execution.cancelables.CompositeCancelable
 import monix.reactive.Consumer
@@ -51,7 +52,20 @@ object ParallelOps {
       skipDotDirectories: Boolean = false
   )
 
-  case class FileWalk(visited: List[Path], target: List[Path])
+  case class FileWalk(visited: List[Path], target: List[Path], copiedCount: Int = 0)
+
+  object FileWalk {
+    def fromList(list: List[FileWalk]): FileWalk = {
+      list.foldLeft(FileWalk(Nil, Nil, 0)) {
+        case (acc, fileWalk) =>
+          FileWalk(
+            acc.visited ++ fileWalk.visited,
+            acc.target ++ fileWalk.target,
+            acc.copiedCount + fileWalk.copiedCount
+          )
+      }
+    }
+  }
 
   private[this] val takenByOtherCopyProcess = new ConcurrentHashMap[Path, Promise[Unit]]()
 
@@ -64,7 +78,7 @@ object ParallelOps {
       config: ParallelOps.CopyConfiguration,
       logger: Logger,
       scheduler: Scheduler
-  ): Task[Unit] = {
+  ): Task[FileWalk] = {
     val (singleFiles, classpathEntries) =
       resources.partition(path => path.exists && path.isFile)
 
@@ -85,7 +99,9 @@ object ParallelOps {
           )
       }
 
-    Task.gatherUnordered(classpathEntriesCopy).map(_ => ())
+    Task.gatherUnordered(classpathEntriesCopy).map { fileWalks =>
+      FileWalk.fromList(fileWalks)
+    }
   }
 
   /**
@@ -111,6 +127,7 @@ object ParallelOps {
       additionalFiles: Seq[(Path, Path)] = Nil
   ): Task[FileWalk] = Task.defer {
     val isCancelled = AtomicBoolean(false)
+    val copiedFilesCount = AtomicInt(0)
 
     import scala.collection.mutable
     val visitedPaths = new mutable.ListBuffer[Path]()
@@ -185,10 +202,10 @@ object ParallelOps {
 
     val discoverFileTree = Task {
       if (!Files.exists(origin)) {
-        FileWalk(Nil, Nil)
+        FileWalk(Nil, Nil, 0)
       } else {
         Files.walkFileTree(origin, discovery)
-        FileWalk(visitedPaths.toList, targetPaths.toList)
+        FileWalk(visitedPaths.toList, targetPaths.toList, 0)
       }
     }.doOnFinish {
       case Some(t) => Task(observer.onError(t))
@@ -222,6 +239,8 @@ object ParallelOps {
               StandardCopyOption.COPY_ATTRIBUTES
             )
           }
+          // Increment counter only on successful copy
+          copiedFilesCount.incrementAndGet()
           ()
         } catch {
           case _: AccessDeniedException if retry > 0 =>
@@ -332,7 +351,10 @@ object ParallelOps {
       .flatMap(_ => copyAdditionalFiles)
       .flatMap(_ => discoverFileTree)
     val aggregatedCopyTask = Task {
-      Task.mapBoth(orderlyDiscovery, copyFilesInParallel) { case (fileWalk, _) => fileWalk }
+      Task.mapBoth(orderlyDiscovery, copyFilesInParallel) {
+        case (fileWalk, _) =>
+          fileWalk.copy(copiedCount = copiedFilesCount.get())
+      }
     }.flatten.executeOn(scheduler)
 
     aggregatedCopyTask.doOnCancel(Task {

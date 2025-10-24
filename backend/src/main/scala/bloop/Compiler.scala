@@ -49,8 +49,6 @@ import xsbti.VirtualFileRef
 import xsbti.compile._
 import bloop.util.HashedSource
 
-
-
 case class CompileInputs(
     scalaInstance: ScalaInstance,
     compilerCache: CompilerCache,
@@ -176,6 +174,7 @@ object CompileOutPaths {
 }
 
 object Compiler {
+  private type IsNoOp = Boolean
   private implicit val filter: DebugFilter.Compilation.type = bloop.logging.DebugFilter.Compilation
   private val converter = HashedSource.converter
   private final class BloopProgress(
@@ -427,7 +426,7 @@ object Compiler {
                 clientReporter: Reporter,
                 clientTracer: BraveTracer,
                 clientLogger: Logger
-            ): Task[Unit] = Task.defer {
+            ): Task[ClientResult] = Task.defer {
               val clientClassesDir = clientClassesObserver.classesDir
               clientLogger.debug(s"Triggering background tasks for $clientClassesDir")
 
@@ -458,7 +457,7 @@ object Compiler {
               )
               Task
                 .gatherUnordered(List(firstTask, secondTask))
-                .map(_ => ())
+                .map(_ => ClientResult.Copied)
             }
           }
           (
@@ -571,7 +570,7 @@ object Compiler {
                   clientReporter: Reporter,
                   clientTracer: BraveTracer,
                   clientLogger: Logger
-              ): Task[Unit] = Task.defer {
+              ): Task[ClientResult] = Task.defer {
                 val clientClassesDir = clientClassesObserver.classesDir
                 clientLogger.debug(s"Triggering background tasks for $clientClassesDir")
                 val updateClientState =
@@ -618,13 +617,18 @@ object Compiler {
                 Task
                   .gatherUnordered(
                     List(
-                      deleteNewClassesDir,
+                      deleteNewClassesDir.map(_ => ClientResult.NoOp),
                       updateClientState,
-                      writeAnalysisIfMissing,
-                      cleanUpTemporaryFiles
+                      writeAnalysisIfMissing.map(_ => ClientResult.NoOp),
+                      cleanUpTemporaryFiles.map(_ => ClientResult.NoOp)
                     )
                   )
-                  .flatMap(_ => publishClientAnalysis)
+                  .flatMap { clientResults =>
+                    val result =
+                      if (clientResults.forall(_ == ClientResult.NoOp)) ClientResult.NoOp
+                      else ClientResult.Copied
+                    publishClientAnalysis.map(_ => result)
+                  }
                   .onErrorHandleWith(err => {
                     clientLogger.debug("Caught error in background tasks");
                     clientLogger.trace(err);
@@ -667,7 +671,7 @@ object Compiler {
                   clientReporter: Reporter,
                   clientTracer: BraveTracer,
                   clientLogger: Logger
-              ): Task[Unit] = {
+              ): Task[ClientResult] = {
                 val clientClassesDir = clientClassesObserver.classesDir
                 val successBackgroundTasks =
                   Task
@@ -723,7 +727,7 @@ object Compiler {
                   }.flatMap(clientClassesObserver.nextAnalysis)
                   Task
                     .gatherUnordered(List(firstTask, secondTask))
-                    .flatMap(_ => publishClientAnalysis)
+                    .flatMap(_ => publishClientAnalysis.map(_ => ClientResult.Copied))
                 }
 
                 allClientSyncTasks.doOnFinish(_ => Task(clientReporter.reportEndCompilation()))
@@ -799,7 +803,7 @@ object Compiler {
       readOnlyCopyDenylist: mutable.HashSet[Path],
       allInvalidatedClassFilesForProject: mutable.HashSet[File],
       allInvalidatedExtraCompileProducts: mutable.HashSet[File]
-  ): Task[Unit] = Task.defer {
+  ): Task[ClientResult] = Task.defer {
     val descriptionMsg = s"Updating external classes dir with read only $clientClassesDir"
     clientTracer.traceTaskVerbose(descriptionMsg) { _ =>
       Task.defer {
@@ -831,11 +835,12 @@ object Compiler {
           compileInputs.logger
         )
 
-        Task.gatherUnordered(List(copyResources, lastCopy)).map { _ =>
+        Task.gatherUnordered(List(copyResources, lastCopy)).map { fileWalks =>
           clientLogger.debug(
             s"Finished copying classes from $readOnlyClassesDir to $clientClassesDir"
           )
-          ()
+          if (ParallelOps.FileWalk.fromList(fileWalks).copiedCount == 0) ClientResult.NoOp
+          else ClientResult.Copied
         }
       }
     }
@@ -1032,7 +1037,7 @@ object Compiler {
           clientReporter: Reporter,
           clientTracer: BraveTracer,
           clientLogger: Logger
-      ): Task[Unit] = {
+      ): Task[ClientResult] = {
         val clientClassesDir = clientClassesObserver.classesDir
         val successBackgroundTasks =
           deleteClientExternalBestEffortDirTask(clientClassesDir).flatMap { _ =>
@@ -1052,7 +1057,7 @@ object Compiler {
               .filter(path => Files.isRegularFile(path))
               .filter(path => deletedCompileProducts.exists(path.toString.endsWith(_)))
               .forEach(Files.delete(_))
-          }.map(_ => ())
+          }.map(_ => ClientResult.Copied)
         }
 
         allClientSyncTasks.doOnFinish(_ => Task(clientReporter.reportEndCompilation()))
@@ -1089,10 +1094,10 @@ object Compiler {
           clientReporter: Reporter,
           tracer: BraveTracer,
           clientLogger: Logger
-      ): Task[Unit] = {
+      ): Task[ClientResult] = {
         val clientClassesDir = clientClassesObserver.classesDir
         val backgroundTasks = tasks.map(f => f(clientClassesDir, clientReporter, tracer))
-        Task.gatherUnordered(backgroundTasks).memoize.map(_ => ())
+        Task.gatherUnordered(backgroundTasks).memoize.map(_ => ClientResult.Copied)
       }
     }
   }

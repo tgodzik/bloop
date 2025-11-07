@@ -4,7 +4,6 @@ import build.Dependencies
 import build.Dependencies.{Scala211Version, Scala212Version, SbtVersion}
 
 ThisBuild / dynverSeparator := "-"
-ThisBuild / resolvers ++= Resolver.sonatypeOssRepos("snapshots")
 
 // Add hook for scalafmt validation
 Global / onLoad ~= { old =>
@@ -160,7 +159,8 @@ lazy val frontend: Project = project
       Dependencies.scalaDebugAdapter,
       Dependencies.bloopConfig,
       Dependencies.logback,
-      Dependencies.libdaemonjvm
+      Dependencies.libdaemonjvm,
+      Dependencies.jupiterInterface
     ),
     // needed for tests and to be automatically updated
     Test / libraryDependencies += Dependencies.semanticdb intransitive (),

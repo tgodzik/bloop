@@ -1,11 +1,15 @@
 package bloop.testing
 
+import java.io.File
+import java.net.URL
 import java.util.regex.Pattern
 
 import scala.collection.mutable
+import scala.jdk.CollectionConverters._
 import scala.util.control.NonFatal
 
 import ch.epfl.scala.debugadapter.testing.TestSuiteEvent
+import com.github.sbt.junit.jupiter.api.JupiterTestCollector
 
 import bloop.DependencyResolution
 import bloop.cli.CommonOptions
@@ -62,7 +66,9 @@ object TestInternals {
         "sun.",
         "sbt.testing.",
         "org.scalatools.testing.",
-        "org.xml.sax."
+        "org.xml.sax.",
+        "org.junit.platform.engine.",
+        "org.junit.platform.launcher.listeners."
       )
     )
     new FilteredLoader(getClass.getClassLoader, filter)
@@ -359,6 +365,72 @@ object TestInternals {
       case str => Pattern.quote(str)
     }
     Pattern.compile(parts.mkString(".*"))
+  }
+
+  /**
+   * Discovers JUnit 5 (Jupiter) tests using reflection via JupiterTestCollector.
+   *
+   * This method uses the jupiter-interface library to discover JUnit 5 tests at runtime,
+   * similar to how SBT discovers them. The discovery is done through reflection to find
+   * test methods annotated with @Test, @ParameterizedTest, etc.
+   *
+   * @param classDirectory The directory containing compiled test classes
+   * @param classLoader The class loader to use for loading test classes
+   * @param classpath The runtime classpath including test dependencies
+   * @param logger Logger for diagnostic messages
+   * @return A list of TaskDef objects representing discovered JUnit 5 tests
+   */
+  def discoverJUnit5Tests(
+      classDirectory: File,
+      classLoader: ClassLoader,
+      classpath: Array[URL],
+      logger: Logger
+  ): List[TaskDef] = {
+    try {
+      logger.debug(s"Discovering JUnit 5 tests in ${classDirectory.getAbsolutePath}")
+      logger.debug(s"Using classpath: ${classpath.mkString(", ")}")
+      logger.debug(s"Using classpath: ${classDirectory}")
+
+      val collector = new JupiterTestCollector.Builder()
+        .withClassDirectory(classDirectory)
+        .withClassLoader(classLoader)
+        .withRuntimeClassPath(classpath)
+        .build()
+
+      val discoveredTests = collector.collectTests().getDiscoveredTests.asScala.toList
+
+      logger.debug(s"Discovered ${discoveredTests.size} JUnit 5 test(s)")
+
+      val taskDefs = discoveredTests.map { item =>
+        new TaskDef(
+          item.getFullyQualifiedClassName,
+          item.getFingerprint,
+          item.isExplicit,
+          item.getSelectors
+        )
+      }
+
+      if (taskDefs.nonEmpty && !hasJupiterRuntime(classpath)) {
+        logger.warn(
+          "Found JUnit 5 tests but jupiter-interface may not be on the classpath. " +
+            "Tests might be silently ignored."
+        )
+      }
+
+      taskDefs
+    } catch {
+      case NonFatal(e) =>
+        logger.debug(s"Failed to discover JUnit 5 tests: ${e.getMessage}")
+        logger.trace(e)
+        List.empty
+    }
+  }
+
+  /**
+   * Checks if the jupiter-interface runtime library is present in the classpath.
+   */
+  private def hasJupiterRuntime(classpath: Array[URL]): Boolean = {
+    classpath.exists(_.toString.contains("jupiter-interface"))
   }
 
 }

@@ -25,6 +25,7 @@ object Dependencies {
   val sbtTestInterfaceVersion = "1.0"
   val sbtTestAgentVersion = "1.11.7"
   val junitVersion = "0.13.3"
+  val jupiterInterfaceVersion = "0.17.0"
   val directoryWatcherVersion = "0.8.0+6-f651bd93"
   val monixVersion = "3.2.0"
   val jsoniterVersion = "2.13.3.2"
@@ -43,7 +44,7 @@ object Dependencies {
   val asmVersion = "9.9"
   val ztExecVersion = "1.12"
   val debugAdapterVersion = "4.2.8"
-  val bloopConfigVersion = "2.3.3"
+  val bloopConfigVersion = "2.3.3-2-da4266-DIRTY662f0d98"
   val semanticdbVersion = "4.9.9"
   val millVersion = "0.12.7"
   val zinc = "org.scala-sbt" %% "zinc" % zincVersion
@@ -84,6 +85,7 @@ object Dependencies {
   val pprint = "com.lihaoyi" %% "pprint" % "0.9.4"
   val oslib = "com.lihaoyi" %% "os-lib" % "0.11.6"
   val junit = "com.github.sbt" % "junit-interface" % junitVersion
+  val jupiterInterface = "com.github.sbt.junit" % "jupiter-interface" % jupiterInterfaceVersion
   val directoryWatcher = "ch.epfl.scala" % "directory-watcher" % directoryWatcherVersion
   val difflib = "com.googlecode.java-diff-utils" % "diffutils" % difflibVersion
 

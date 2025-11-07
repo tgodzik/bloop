@@ -24,6 +24,7 @@ import bloop.io.ByteHasher
 import bloop.logging.DebugFilter
 import bloop.logging.Logger
 import bloop.task.Task
+import bloop.testing.JUnit5FrameworkDependency
 import bloop.testing.TestNGFrameworkDependency
 import bloop.util.JavaRuntime
 
@@ -306,9 +307,13 @@ object Project {
             .getOrElse(compileClasspath)
 
           // adjust for testng
-          if (testFrameworks.contains(Config.TestFramework.TestNG))
-            TestNGFrameworkDependency.maybeAddTestNGFrameworkDependency(classpath, logger)
-          else classpath
+          val classpathWithTestNG =
+            if (testFrameworks.contains(Config.TestFramework.TestNG))
+              TestNGFrameworkDependency.maybeAddTestNGFrameworkDependency(classpath, logger)
+            else classpath
+
+          // adjust for junit 5
+          JUnit5FrameworkDependency.maybeAddJUnit5FrameworkDependency(classpathWithTestNG, logger)
         }
         val runtimeResources = platform.resources
           .map(_.map(AbsolutePath.apply))

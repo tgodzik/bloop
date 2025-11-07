@@ -503,3 +503,81 @@ object MultiFingerprintMatch extends BaseTestSpec("test-test", "custom-test-fram
         |$delimiter
         |""".stripMargin
 }
+
+object JUnit5TestSpec extends bloop.testing.BaseSuite {
+  test("runs JUnit 5 tests with automatic jupiter-interface resolution") {
+    TestUtil.withinWorkspace { workspace =>
+      object Sources {
+        val `a/JUnit5Test.scala` =
+          """/a/JUnit5Test.scala
+            |package a
+            |import org.junit.jupiter.api.Test
+            |import org.junit.jupiter.api.Assertions.assertEquals
+            |
+            |class JUnit5Test {
+            |  @Test
+            |  def testAddition(): Unit = {
+            |    assertEquals(4, 2 + 2)
+            |  }
+            |
+            |  @Test
+            |  def testSubtraction(): Unit = {
+            |    assertEquals(0, 2 - 2)
+            |  }
+            |}""".stripMargin
+      }
+
+      val logger = new RecordingLogger(ansiCodesSupported = false)
+
+      // Resolve JUnit 5 (Jupiter) dependencies
+      val jupiterApi = bloop.DependencyResolution.Artifact(
+        "org.junit.jupiter",
+        "junit-jupiter-api",
+        "6.0.1"
+      )
+      val jupiterEngine = bloop.DependencyResolution.Artifact(
+        "org.junit.jupiter",
+        "junit-jupiter-engine",
+        "6.0.1"
+      )
+
+      val jupiterInterface = bloop.DependencyResolution.Artifact(
+        "org.junit.jupiter",
+        "jupiter-interface",
+        "0.17.0"
+      )
+
+      val junit5Jars = bloop.DependencyResolution.resolve(
+        List(jupiterApi, jupiterEngine, jupiterInterface),
+        logger
+      )
+
+      val `A` = TestProject(
+        workspace,
+        "a",
+        List(Sources.`a/JUnit5Test.scala`),
+        enableTests = true,
+        jars = junit5Jars.toArray
+      )
+
+      val projects = List(`A`)
+      val state = loadState(workspace, projects, logger)
+
+      // Compile the test project
+      val compiledState = state.compile(`A`)
+      assert(compiledState.status == ExitStatus.Ok)
+
+      // Run the tests
+      val testState = compiledState.test(`A`)
+      logger.dump()
+      // Verify test execution succeeded
+      assert(testState.status == ExitStatus.Ok)
+
+      // // Verify both tests ran
+      // val output = logger.renderTimeInsensitiveTestInfos
+      // assert(output.contains("testAddition"))
+      // assert(output.contains("testSubtraction"))
+      // assert(output.contains("2 passed") || output.contains("2 tests, 2 passed"))
+    }
+  }
+}

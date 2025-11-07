@@ -114,6 +114,18 @@ object TestTask {
         case Some(found) =>
           val configuredFrameworks = found.frameworks
           logger.debug(s"Found test frameworks: ${configuredFrameworks.map(_.name).mkString(", ")}")
+
+          // Extract classloader and classpath for JUnit 5 discovery
+          val (testClassLoader, testClasspath) = found match {
+            case DiscoveredTestFrameworks.Jvm(_, forker, loader) =>
+              val dag = state.build.getDagFor(project)
+              val classpath = project.fullRuntimeClasspath(dag, state.client)
+              val classpathUrls = classpath.map(_.underlying.toUri.toURL).toArray
+              (Some(loader), Some(classpathUrls))
+            case _ =>
+              (None, None)
+          }
+
           val suites =
             discoverTestSuites(
               state,
@@ -121,7 +133,9 @@ object TestTask {
               configuredFrameworks,
               compileAnalysis,
               testFilter,
-              testClasses
+              testClasses,
+              testClassLoader,
+              testClasspath
             )
           val discoveredFrameworks = suites.iterator.filterNot(_._2.isEmpty).map(_._1).toList
           val (userJvmOptions, userTestOptions) = rawTestOptions.partition(_.startsWith("-J"))
@@ -293,10 +307,24 @@ object TestTask {
       frameworks: List[Framework],
       analysis: CompileAnalysis,
       testFilter: String => Boolean,
-      testClasses: bsp.ScalaTestSuites
+      testClasses: bsp.ScalaTestSuites,
+      classLoader: Option[ClassLoader] = None,
+      classpath: Option[Array[java.net.URL]] = None
   ): Map[Framework, List[TaskDef]] = {
     import state.logger
-    val tests = discoverTests(analysis, frameworks)
+
+    // Prepare parameters for JUnit 5 discovery
+    val classDirectory = Some(project.clientClassesRootDirectory.toFile)
+    pprint.log(classDirectory)
+
+    val tests = discoverTests(
+      analysis,
+      frameworks,
+      classDirectory,
+      classLoader,
+      classpath,
+      Some(logger)
+    )
     val excluded = project.testOptions.excludes.toSet
     val ungroupedTests = tests.toList.flatMap {
       case (framework, tasks) => tasks.map(taskDef => TaskDefWithFramework(taskDef, framework))
@@ -353,7 +381,11 @@ object TestTask {
 
   private[bloop] def discoverTests(
       analysis: CompileAnalysis,
-      frameworks: List[Framework]
+      frameworks: List[Framework],
+      classDirectory: Option[java.io.File] = None,
+      classLoader: Option[ClassLoader] = None,
+      classpath: Option[Array[java.net.URL]] = None,
+      logger: Option[Logger] = None
   ): Map[Framework, List[TaskDef]] = {
     import scala.collection.mutable
     val (subclassPrints, annotatedPrints) = TestInternals.getFingerprints(frameworks)
@@ -377,6 +409,30 @@ object TestTask {
             }
         }
     }
+
+    // Discover JUnit 5 tests using reflection if the necessary parameters are provided
+    (classDirectory, classLoader, classpath, logger) match {
+      case (Some(classDir), Some(loader), Some(cp), Some(log)) =>
+        // Check if any framework might be JUnit 5 (Jupiter)
+        val jupiterFramework = frameworks.find { framework =>
+          val name = framework.name().toLowerCase
+          name.contains("jupiter") || name.contains("junit5") ||
+          framework.getClass.getName.toLowerCase.contains("jupiter")
+        }
+
+        jupiterFramework.foreach { framework =>
+          val junit5Tests = TestInternals.discoverJUnit5Tests(classDir, loader, cp, log)
+          pprint.log(classDirectory)
+          pprint.log(junit5Tests)
+          junit5Tests.foreach { taskDef =>
+            if (seen.add(taskDef.fullyQualifiedName())) {
+              tasks(framework) += taskDef
+            }
+          }
+        }
+      case _ => // No JUnit 5 discovery parameters provided, skip
+    }
+
     tasks.mapValues(_.toList).toMap
   }
 
@@ -395,6 +451,7 @@ object TestTask {
       case None => List.empty
       case Some(found) =>
         val frameworks = found.frameworks
+        pprint.log(s"frameworks: $frameworks")
         val lastCompileResult = state.results.lastSuccessfulResultOrEmpty(project)
         val analysis = lastCompileResult.previous.analysis().toOption.getOrElse {
           state.logger

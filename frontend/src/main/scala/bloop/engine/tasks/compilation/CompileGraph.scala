@@ -27,6 +27,7 @@ import bloop.tracing.BraveTracer
 import bloop.util.BestEffortUtils.BestEffortProducts
 import bloop.util.JavaCompat.EnrichOptional
 import bloop.util.SystemProperties
+import bloop.io.AbsolutePath
 import xsbti.compile.PreviousResult
 
 object CompileGraph {
@@ -458,6 +459,8 @@ object CompileGraph {
                     } else {
                       val dependentProducts = new mutable.ListBuffer[(Project, BundleProducts)]()
                       val dependentResults = new mutable.ListBuffer[(File, PreviousResult)]()
+                      val dependentClassesDirs = new mutable.HashSet[AbsolutePath]()
+
                       results.foreach {
                         case (p, ResultBundle(s: Compiler.Result.Success, _, _, _)) =>
                           val newProducts = s.products
@@ -466,10 +469,18 @@ object CompileGraph {
                           dependentResults
                             .+=(newProducts.newClassesDir.toFile -> newResult)
                             .+=(newProducts.readOnlyClassesDir.toFile -> newResult)
+
+                          // Track classes directories that need protection from deletion
+                          val newClassesDir = AbsolutePath(newProducts.newClassesDir)
+                          dependentClassesDirs += newClassesDir
+
                         case (p, ResultBundle(f: Compiler.Result.Failed, _, _, _)) =>
                           f.bestEffortProducts.foreach {
                             case BestEffortProducts(products, _, _) =>
                               dependentProducts += (p -> Right(products))
+                              // Track best effort classes directories too
+                              val newClassesDir = AbsolutePath(products.newClassesDir)
+                              dependentClassesDirs += newClassesDir
                           }
                         case _ => ()
                       }
@@ -478,14 +489,28 @@ object CompileGraph {
                       val bundleInputs = BundleInputs(project, dag, dependentProducts.toMap)
                       tracer.trace("setupAndDeduplicate - parent project") { tracer =>
                         setupAndDeduplicate(client, bundleInputs, computeBundle, tracer) { bundle =>
-                          val inputs = Inputs(bundle, resultsMap)
-                          compile(inputs, bestEffortAllowed && project.isBestEffort, dependsOnBestEffort, tracer).map { results =>
-                            results.fromCompiler match {
-                              case Compiler.Result.Ok(_) if failed.isEmpty =>
-                                Parent(partialSuccess(bundle, results), dagResults)
-                              case _ => Parent(toPartialFailure(bundle, results), dagResults)
-                            }
+                          // Protect dependent classes directories from deletion while this compilation runs
+                          dependentClassesDirs.foreach { classesDir =>
+                            CompileGatekeeper.incrementClassesDirCounter(classesDir, bundle.logger.underlying)
                           }
+
+                          val inputs = Inputs(bundle, resultsMap)
+                          compile(inputs, bestEffortAllowed && project.isBestEffort, dependsOnBestEffort, tracer)
+                            .doOnFinish { _ =>
+                              // Release protection when compilation completes (success or failure)
+                              Task {
+                                dependentClassesDirs.foreach { classesDir =>
+                                  CompileGatekeeper.decrementClassesDirCounter(classesDir, bundle.logger.underlying)
+                                }
+                              }
+                            }
+                            .map { results =>
+                              results.fromCompiler match {
+                                case Compiler.Result.Ok(_) if failed.isEmpty =>
+                                  Parent(partialSuccess(bundle, results), dagResults)
+                                case _ => Parent(toPartialFailure(bundle, results), dagResults)
+                              }
+                            }
                         }
                       }
                     }

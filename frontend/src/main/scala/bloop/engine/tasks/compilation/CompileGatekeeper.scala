@@ -70,7 +70,7 @@ object CompileGatekeeper {
                   tracer.trace(
                     "Aborting deduplication",
                     ("uniqueInputs", bundle.uniqueInputs.toString)
-                  ) { tracer =>
+                  ) { _ =>
                     logger.debug(
                       s"Abort deduplication, dir is scheduled to be deleted in background:${bundle.uniqueInputs}"
                     )
@@ -85,7 +85,7 @@ object CompileGatekeeper {
                   tracer.trace(
                     "Increasing compilation counter",
                     ("uniqueInputs", bundle.uniqueInputs.toString)
-                  ) { tracer =>
+                  ) { _ =>
                     logger.debug(
                       s"Increase count to prevent other compiles to schedule its deletion:${bundle.uniqueInputs}"
                     )
@@ -177,7 +177,6 @@ object CompileGatekeeper {
               )
               // Return previous result or the initial last successful coming from the bundle
               val previousResult = initializeLastSuccessful(previousResultOrNull)
-
               currentlyUsedClassesDirs.compute(
                 previousResult.classesDir,
                 (_: AbsolutePath, counter: AtomicInt) => {
@@ -320,6 +319,43 @@ object CompileGatekeeper {
     )
 
     ()
+  }
+
+  /**
+   * Increments the usage counter for a classes directory to protect it from deletion.
+   * This is used to protect dependent classes directories that are being used by a
+   * compilation traversal but were not part of the initial last successful result.
+   */
+  def incrementClassesDirCounter(classesDir: AbsolutePath, logger: Logger): Unit = {
+    currentlyUsedClassesDirs.compute(
+      classesDir,
+      (_: AbsolutePath, counter: AtomicInt) => {
+        if (counter == null) {
+          logger.debug(s"Create new counter for dependent classes dir: $classesDir")
+          AtomicInt(1)
+        } else {
+          val newCount = counter.incrementAndGet(1)
+          logger.debug(s"Incrementing counter for $classesDir to $newCount")
+          counter
+        }
+      }
+    )
+    ()
+  }
+
+  /**
+   * Decrements the usage counter for a classes directory and potentially schedules
+   * it for deletion if no longer in use.
+   */
+  def decrementClassesDirCounter(classesDir: AbsolutePath, logger: Logger): Unit = {
+    val counter = currentlyUsedClassesDirs.get(classesDir)
+    if (counter != null) {
+      val newCount = counter.decrementAndGet(1)
+      logger.debug(s"Decrementing counter for $classesDir to $newCount")
+      if (newCount == 0) {
+        currentlyUsedClassesDirs.remove(classesDir, counter)
+      }
+    }
   }
 
   // Expose clearing mechanism so that it can be invoked in the tests and community build runner
